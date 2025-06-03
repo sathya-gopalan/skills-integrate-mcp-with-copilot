@@ -5,11 +5,13 @@ A super simple FastAPI application that allows students to view and sign up
 for extracurricular activities at Mergington High School.
 """
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request, status, Depends
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 import os
 from pathlib import Path
+import secrets
 
 app = FastAPI(title="Mergington High School API",
               description="API for viewing and signing up for extracurricular activities")
@@ -76,6 +78,44 @@ activities = {
         "participants": ["charlotte@mergington.edu", "henry@mergington.edu"]
     }
 }
+
+# In-memory user database (for demo purposes)
+users = {
+    "organizer@mergington.edu": {
+        "password": "organizerpass",
+        "role": "organizer"
+    },
+    "student@mergington.edu": {
+        "password": "studentpass",
+        "role": "student"
+    }
+}
+
+security = HTTPBasic()
+
+def get_current_user(credentials: HTTPBasicCredentials = Depends(security)):
+    user = users.get(credentials.username)
+    if not user or not secrets.compare_digest(user["password"], credentials.password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+    return {"username": credentials.username, "role": user["role"]}
+
+@app.post("/register")
+def register_user(credentials: HTTPBasicCredentials = Depends(security)):
+    if credentials.username in users:
+        raise HTTPException(status_code=400, detail="User already exists")
+    users[credentials.username] = {
+        "password": credentials.password,
+        "role": "student"  # Default role
+    }
+    return {"message": f"User {credentials.username} registered successfully"}
+
+@app.get("/me")
+def get_me(user: dict = Depends(get_current_user)):
+    return {"username": user["username"], "role": user["role"]}
 
 
 @app.get("/")
